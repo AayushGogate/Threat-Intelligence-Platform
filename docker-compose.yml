@@ -1,0 +1,115 @@
+version: "3.9"
+
+x-backend-env: &backend-env
+  ENV: ${ENV:-development}
+  DEBUG: ${DEBUG:-true}
+  POSTGRES_DB: ${POSTGRES_DB:-threatintelx}
+  POSTGRES_USER: ${POSTGRES_USER:-threatintelx}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-threatintelx}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  REDIS_URL: redis://redis:6379/0
+  JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@threatintelx.local}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
+  DEMO_MODE: ${DEMO_MODE:-true}
+  API_KEY_1: ${API_KEY_1:-}
+  API_KEY_2: ${API_KEY_2:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+  FEED_INTERVAL_MINUTES: ${FEED_INTERVAL_MINUTES:-30}
+  ENRICHMENT_INTERVAL_MINUTES: ${ENRICHMENT_INTERVAL_MINUTES:-60}
+  CORRELATION_INTERVAL_MINUTES: ${CORRELATION_INTERVAL_MINUTES:-60}
+  CLEANUP_INTERVAL_HOURS: ${CLEANUP_INTERVAL_HOURS:-24}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-threatintelx}
+      POSTGRES_USER: ${POSTGRES_USER:-threatintelx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-threatintelx}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-threatintelx}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment: *backend-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - ./backend:/app
+
+  worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["/app/worker-entrypoint.sh"]
+    environment: *backend-env
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  scheduler:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["/app/scheduler-entrypoint.sh"]
+    environment: *backend-env
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:

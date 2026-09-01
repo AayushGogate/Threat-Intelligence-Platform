@@ -1,0 +1,39 @@
+version: "3.9"
+
+# Production overlay. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+#
+# This overlay:
+#  - Builds the frontend as a static Nginx bundle instead of the Vite dev server
+#  - Disables backend debug mode and tightens CORS
+#  - Removes host port exposure for Postgres/Redis (internal network only)
+#  - Does NOT set secrets - you must provide strong values via your real .env
+#    or a secrets manager before deploying.
+
+services:
+  postgres:
+    ports: []
+
+  redis:
+    ports: []
+
+  backend:
+    environment:
+      ENV: production
+      DEBUG: "false"
+    volumes: []  # do not bind-mount source in production
+
+  worker:
+    volumes: []
+
+  scheduler:
+    volumes: []
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.prod.Dockerfile
+    ports:
+      - "8080:80"
+    volumes: []
+    command: []
